@@ -6,8 +6,12 @@ This is a simple tool to convert the output of the MediaPipe Pose model to a BVH
 1. Converts the output of the MediaPipe Pose model to a BVH file. 
 2. Generates blendshapes for the face.
 3. Hand tracking.
-4. Plug and play into any 3D software that supports BVH and blendshapes.
-5. No installation required. Just open the HTML file in the browser.
+4. **Dual Mode System**: 
+   - **Tracking Mode**: Real-time avatar tracking from webcam
+   - **Animation Mode**: Play pre-loaded FBX animations (Chicken Dance, Fast Run, etc.)
+5. Customizable background images.
+6. Plug and play into any 3D software that supports BVH and blendshapes.
+7. No installation required. Just open the HTML file in the browser.
 
 ## Demo
 

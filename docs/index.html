@@ -38,6 +38,11 @@
 
     var facemesh;
     var lastUpdateFrameTime = 0;
+    
+    // Mode switching
+    var currentMode = 'tracking'; // 'tracking' or 'animation'
+    var currentAnimation = null;
+    var animationMixer = null;
 
   </script>
 
@@ -118,6 +123,32 @@
 
 </script>
 
+<!-- Mode Selection Panel -->
+<div style="position:fixed; top:20px; right:20px; z-index:10000; background:rgba(0,0,0,0.8); padding:20px; border-radius:10px; color:white;">
+  <h5 style="margin-top:0; color:white;">Mode Selection</h5>
+  <div style="margin-bottom:15px;">
+    <label style="color:white;">
+      <input name="mode" type="radio" value="tracking" checked onchange="switchMode('tracking')" />
+      <span style="color:white;">Tracking Mode</span>
+    </label>
+  </div>
+  <div style="margin-bottom:15px;">
+    <label style="color:white;">
+      <input name="mode" type="radio" value="animation" onchange="switchMode('animation')" />
+      <span style="color:white;">Animation Mode</span>
+    </label>
+  </div>
+  
+  <div id="animationControls" style="display:none; margin-top:15px;">
+    <label style="color:white; display:block; margin-bottom:10px;">Select Animation:</label>
+    <select id="animationSelect" class="browser-default" style="background:white; color:black; padding:5px; border-radius:5px; width:100%;" onchange="loadSelectedAnimation()">
+      <option value="">-- Select Animation --</option>
+      <option value="Chicken Dance.fbx">Chicken Dance</option>
+      <option value="Fast Run.fbx">Fast Run</option>
+    </select>
+  </div>
+</div>
+
 <p id="recdetails" style="z-index:9999;position:fixed;bottom:20px;left:5px;color:white;padding:10px;">
   Not Recording...
 </p>
@@ -126,6 +157,53 @@
     <i class="material-icons" style="vertical-align:middle;font-size:200%">fiber_manual_record</i>
     Record BVH
   </button>
+
+<script>
+  function switchMode(mode) {
+    currentMode = mode;
+    const animationControls = document.getElementById('animationControls');
+    if (mode === 'animation') {
+      animationControls.style.display = 'block';
+      // Stop any current tracking by clearing holistic results temporarily
+      // The tracking code already checks for currentMode === 'tracking'
+    } else {
+      animationControls.style.display = 'none';
+      // Stop any current animation
+      if (currentAnimation) {
+        currentAnimation.stop();
+        currentAnimation = null;
+      }
+      if (animationMixer) {
+        animationMixer.stopAllAction();
+      }
+      // Reset clock when switching back to tracking
+      if (window.clock) {
+        window.clock.start();
+      }
+    }
+  }
+  
+  function loadSelectedAnimation() {
+    const select = document.getElementById('animationSelect');
+    const animationFile = select.value;
+    if (animationFile && window.loadAnimation) {
+      // Reset clock when loading new animation
+      if (window.clock) {
+        window.clock.start();
+      }
+      window.loadAnimation(animationFile);
+    } else if (!animationFile) {
+      // If no animation selected, stop current animation
+      if (currentAnimation) {
+        currentAnimation.stop();
+        currentAnimation = null;
+      }
+      if (animationMixer) {
+        animationMixer.stopAllAction();
+      }
+    }
+  }
+</script>
 
   <script type="module" src="./script.js"></script>
   <script type="module" src="threejsscene.js"></script>

@@ -272,6 +272,7 @@ stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
 
 const clock_bvh = new THREE.Clock();
 const clock = new THREE.Clock();
+window.clock = clock; // Expose clock to window for mode switching
 
 let mixer;
 
@@ -323,9 +324,19 @@ function init() {
     camera.position.set(0, 100, 600);
 
     scene = new THREE.Scene();
-    // scene.background = new THREE.Color(0xa0a0a0);
-    scene.background = new THREE.Color(0x111111);
-    // add transparent background
+    // Load background texture - try .jpeg first, then .jpg
+    const textureLoader = new THREE.TextureLoader();
+    textureLoader.load('./background.jpeg', function(texture) {
+        scene.background = texture;
+    }, undefined, function(error) {
+        // Fallback to .jpg if .jpeg doesn't exist
+        textureLoader.load('./background.jpg', function(texture) {
+            scene.background = texture;
+        }, undefined, function(error) {
+            console.warn('Could not load background image, using default color');
+            scene.background = new THREE.Color(0x111111);
+        });
+    });
 
     // scene.fog = new THREE.Fog( 0xa0a0a0, 200, 1000 );
     const ambientLight = new THREE.AmbientLight(0x404040);
@@ -391,6 +402,7 @@ function init() {
         model.children[2].material.color.set(0x222222);
 
         mixer = new THREE.AnimationMixer(object);
+        animationMixer = mixer; // Store for mode switching
         object.traverse(function (child) {
             if (child.name === "mixamorigHead") {
                 child.traverse(function (child1) {
@@ -475,6 +487,13 @@ function onWindowResize() {
 var flag = true;
 function animate() {
     requestAnimationFrame(animate);
+    
+    // Update animation mixer if in animation mode
+    if (currentMode === 'animation' && mixer) {
+        const delta = clock.getDelta();
+        mixer.update(delta);
+    }
+    
     if (performance.now() - lastFrameTime - lastUpdateFrameTime > 1000/bvhRecorderFrequency && recording) {
         lastFrameTime = performance.now();
         setTimeout(function(){
@@ -499,7 +518,8 @@ function animate() {
         }
     }
 
-    if (holisticResults) {
+    // Only apply tracking in tracking mode
+    if (currentMode === 'tracking' && holisticResults) {
         let R_chain_rightupper, R_chain_leftupper;
         let pose_left_wrist, pose_right_wrist;
         let results = holisticResults;
@@ -1101,17 +1121,20 @@ function animate() {
     }
 
 
-    if (faceResults && faceResults.faceBlendshapes && faceResults.faceBlendshapes.length > 0) {
+    // Only apply face tracking in tracking mode
+    if (currentMode === 'tracking' && faceResults && faceResults.faceBlendshapes && faceResults.faceBlendshapes.length > 0) {
 
         const face = scene.getObjectByName('mesh_2');
-        const faceBlendshapes = faceResults.faceBlendshapes[0].categories;
-        for (const blendshape of faceBlendshapes) {
-            const categoryName = blendshape.categoryName;
-            const score = blendshape.score;
-            const index = face.morphTargetDictionary[blendshapesMap[categoryName]];
+        if (face && face.morphTargetDictionary) {
+            const faceBlendshapes = faceResults.faceBlendshapes[0].categories;
+            for (const blendshape of faceBlendshapes) {
+                const categoryName = blendshape.categoryName;
+                const score = blendshape.score;
+                const index = face.morphTargetDictionary[blendshapesMap[categoryName]];
 
-            if (index !== undefined) {
-                face.morphTargetInfluences[index] = score;
+                if (index !== undefined) {
+                    face.morphTargetInfluences[index] = score;
+                }
             }
         }
         // map face orientaion to head
@@ -1126,9 +1149,13 @@ function animate() {
 
     }
     
-    var head = model.getObjectByName("mixamorigHead");
-    head.getWorldPosition(facemesh.position);
-    head.getWorldQuaternion(facemesh.quaternion);
+    if (model && facemesh) {
+        var head = model.getObjectByName("mixamorigHead");
+        if (head) {
+            head.getWorldPosition(facemesh.position);
+            head.getWorldQuaternion(facemesh.quaternion);
+        }
+    }
 
     renderer.render(scene, camera);
 
@@ -1292,3 +1319,111 @@ function loadAndPlayBVH(bvhData) {
     // console.log(animation);
     animation.play();
 }
+
+// Function to load FBX animation - make it globally accessible
+window.loadAnimation = function(animationFile) {
+    if (!model) {
+        console.warn('Model not loaded yet, retrying...');
+        setTimeout(function() {
+            window.loadAnimation(animationFile);
+        }, 500);
+        return;
+    }
+    
+    if (!mixer) {
+        console.warn('Mixer not initialized yet, retrying...');
+        setTimeout(function() {
+            window.loadAnimation(animationFile);
+        }, 500);
+        return;
+    }
+    
+    console.log('Loading animation file:', animationFile);
+    const loader = new FBXLoader();
+    loader.load("./" + animationFile, function (animObject) {
+        console.log('Animation file loaded:', animObject);
+        console.log('Number of animations:', animObject.animations ? animObject.animations.length : 0);
+        
+        // Stop current animation if any
+        if (animationMixer) {
+            animationMixer.stopAllAction();
+        }
+        if (currentAnimation) {
+            currentAnimation.stop();
+            currentAnimation = null;
+        }
+        
+        // Get animations from the loaded file
+        if (animObject.animations && animObject.animations.length > 0) {
+            // Try to find the best matching animation clip
+            let clip = null;
+            for (let i = 0; i < animObject.animations.length; i++) {
+                clip = animObject.animations[i];
+                console.log('Found animation clip:', clip.name, 'Duration:', clip.duration, 'Tracks:', clip.tracks.length);
+                // Use the first non-empty animation
+                if (clip.tracks && clip.tracks.length > 0) {
+                    break;
+                }
+            }
+            
+            if (clip && clip.tracks && clip.tracks.length > 0) {
+                console.log('Using animation clip:', clip.name, 'Duration:', clip.duration);
+                console.log('Animation tracks:', clip.tracks.length);
+                
+                // Create action from the clip and apply to our model
+                try {
+                    // Try to create the action - this will retarget the animation to our model
+                    currentAnimation = mixer.clipAction(clip, model);
+                    
+                    if (currentAnimation) {
+                        // Reset and configure the animation
+                        currentAnimation.reset();
+                        currentAnimation.setLoop(THREE.LoopRepeat);
+                        currentAnimation.setEffectiveWeight(1.0);
+                        currentAnimation.timeScale = 1.0;
+                        
+                        // Play the animation
+                        currentAnimation.play();
+                        
+                        console.log('Animation playing successfully:', clip.name || animationFile);
+                        console.log('Animation action:', currentAnimation);
+                        console.log('Animation isPlaying:', currentAnimation.isRunning());
+                        console.log('Animation time:', currentAnimation.time);
+                        
+                        // Force mixer update to start immediately
+                        const delta = clock.getDelta();
+                        mixer.update(delta);
+                    } else {
+                        console.error('Failed to create animation action - clipAction returned null');
+                    }
+                } catch (error) {
+                    console.error('Error creating animation action:', error);
+                    console.error('Error stack:', error.stack);
+                }
+            } else {
+                console.warn('No valid animation tracks found in clip');
+            }
+        } else {
+            console.warn('No animations found in ' + animationFile);
+            console.log('Loaded object structure:', animObject);
+            
+            // Try to extract animations from the object itself
+            if (animObject.traverse) {
+                animObject.traverse(function(child) {
+                    if (child.animations && child.animations.length > 0) {
+                        console.log('Found animations in child:', child.name, child.animations.length);
+                    }
+                });
+            }
+        }
+    }, function(progress) {
+        // Progress callback
+        if (progress.lengthComputable) {
+            const percentComplete = progress.loaded / progress.total * 100;
+            console.log('Loading animation:', Math.round(percentComplete) + '%');
+        }
+    }, function(error) {
+        console.error('Error loading animation file:', error);
+        console.error('Error details:', error.message);
+    });
+};
