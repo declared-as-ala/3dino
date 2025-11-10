@@ -493,14 +493,6 @@ function animate() {
         const delta = clock.getDelta();
         mixer.update(delta);
     }
-    
-    if (performance.now() - lastFrameTime - lastUpdateFrameTime > 1000/bvhRecorderFrequency && recording) {
-        lastFrameTime = performance.now();
-        setTimeout(function(){
-            updateMotionData(false);
-
-        }, 0);
-    }
 
     let R_chain_rightupper, R_chain_leftupper;
 
@@ -512,9 +504,6 @@ function animate() {
         if (head && facemesh) {
             head.getWorldPosition(facemesh.position);
             head.getWorldQuaternion(facemesh.quaternion);
-        }
-        if(firstFrameJointData === undefined){
-            firstFrameJointData = updateMotionData(true);
         }
     }
 
@@ -1158,11 +1147,6 @@ function animate() {
     }
 
     renderer.render(scene, camera);
-
-
-    if(recording){
-        document.getElementById("recdetails").innerHTML = "Recording... " + ((Date.now() - recordStartTime)/1000).toFixed(2) + " s (" + recordedMotionData.length + " frames)";
-    }
 
     stats.update();
 }
